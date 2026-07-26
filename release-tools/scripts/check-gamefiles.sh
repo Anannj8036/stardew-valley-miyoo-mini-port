@@ -10,7 +10,6 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 SOURCE=$1
 . "$ROOT/scripts/common.sh"
 
-# TODO: consider ripping this out if other minor version differences (1.6.x) also work
 EXPECTED_GAME_SHA256=505d343f04420186ba2b611bcc5d256eff554451f55a6b37f3454362d5e03656
 EXPECTED_XTILE_SHA256=a05a1123aa3abb8c68ec2589649dfac724dd3cc52a2e0d812f04ffab794a7be5
 EXPECTED_TREE_SHA256=fdb83eb53853ebd8864899515d2a33942f5fd22ea4025f501ae167488176d9ea

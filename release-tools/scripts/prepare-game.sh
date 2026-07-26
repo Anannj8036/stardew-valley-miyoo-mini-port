@@ -13,7 +13,7 @@ TEMPLATE="$ROOT/runtime-template"
 TOOLS="$ROOT/tools/managed"
 . "$ROOT/scripts/common.sh"
 
-for command in mono sgen tar; do
+for command in mono sgen tar docker; do
     need "$command"
 done
 for required in \
@@ -22,7 +22,10 @@ for required in \
     "$TOOLS/Mono.Cecil.dll" \
     "$TOOLS/PackageVerifier.exe" \
     "$TOOLS/XnbTextureBake.exe" \
-    "$TOOLS/SVMM.MapRuntime.dll"
+    "$TOOLS/SVMM.MapRuntime.dll" \
+    "$ROOT/scripts/compile-aot.sh" \
+    "$ROOT/tools/aot/bin/mono-sgen-profilefix" \
+    "$ROOT/tools/aot/profile/pressure-safe.aotprofile"
 do
     [ -e "$required" ] || fail "release file is missing: $required"
 done
@@ -195,6 +198,7 @@ relink_assembly "$GAME_DIR/gamedata/Stardew Valley.XmlSerializers.dll"
 run_serializer_checks "$GAME_DIR"
 relink_assembly "$GAME_DIR/gamedata/xTile.dll"
 cp "$TOOLS/SVMM.MapRuntime.dll" "$GAME_DIR/gamedata/SVMM.MapRuntime.dll"
+"$ROOT/scripts/compile-aot.sh" "$GAME_DIR"
 
 mkdir -p "$BAKED"
 MONO_PATH="$GAME_DIR/dlls:$GAME_DIR/gamedata:$TOOLS${MONO_PATH:+:$MONO_PATH}" \

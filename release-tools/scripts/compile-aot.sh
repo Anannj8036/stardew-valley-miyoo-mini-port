@@ -1,0 +1,161 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 <prepared game directory>" >&2
+    exit 2
+fi
+
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+GAME_DIR=$(CDPATH='' cd -- "$1" && pwd)
+AOT="$ROOT/tools/aot"
+ASSEMBLY="$GAME_DIR/gamedata/Stardew Valley.XmlSerializers.dll"
+SIDECAR="$ASSEMBLY.so"
+MARKER="$GAME_DIR/_svmm-profile-aot.txt"
+DOCKER_IMAGE=${SVMM_DOCKER_IMAGE:-debian:buster}
+DOCKER_PLATFORM=${SVMM_DOCKER_PLATFORM:-}
+
+sha256_file() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        sha256sum "$1" | awk '{print $1}'
+    fi
+}
+
+require_hash() {
+    file=$1
+    expected=$2
+    if [ ! -f "$file" ] || [ "$(sha256_file "$file")" != "$expected" ]; then
+        echo "ERROR: AOT preparation file is missing or damaged: $file" >&2
+        exit 1
+    fi
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "ERROR: Docker is required to prepare the ARM game files" >&2
+    exit 1
+fi
+
+require_hash "$ASSEMBLY" \
+    1eb7644d1648368684f7d422ad9922106ac1929f9c953c78115b666bf047fea9
+require_hash "$GAME_DIR/mono/lib/mono/4.5/mscorlib.dll" \
+    383236a2a58e3b1506338f602b81d2c73ede7470c56a0727371d2b1e8ffdbd15
+require_hash "$AOT/bin/mono-sgen-profilefix" \
+    a73c86c3d755e6246badf14f656bb465224825e60d5304952b5740d94adcf954
+require_hash "$AOT/lib/libmono-llvm.so.0.0.0" \
+    bc7a047dc56e2182f1fa1eb9987dcad702cdcd545a9a7b894a18f5dba52ece87
+require_hash "$AOT/llvm/bin/opt" \
+    1dc58e7e0dfa8227f4b356901afcdc843072f40130b785d4c25628203aacb11a
+require_hash "$AOT/llvm/bin/llc" \
+    b88c3f2f509e585a11442db7f94390948825eb62e44ce37e34703ea8d727fcc6
+require_hash "$AOT/profile/pressure-safe.aotprofile" \
+    6ebb3145af2264e1d848110e17b12fe6f745356e97c1ce693c5af518c5837d89
+
+WORK=${TMPDIR:-/tmp}/stardew-miyoo-aot.$$
+cleanup() {
+    rm -rf "$WORK"
+}
+trap cleanup EXIT INT TERM
+mkdir -p "$WORK"
+
+echo "Compiling the ARM serializer. This usually takes two to three minutes."
+if [ -n "$DOCKER_PLATFORM" ]; then
+    set -- --platform "$DOCKER_PLATFORM"
+else
+    set --
+fi
+docker run "$@" --rm --log-driver none \
+    -v "$AOT:/aot:ro" \
+    -v "$GAME_DIR:/game:ro" \
+    -v "$WORK:/output" \
+    "$DOCKER_IMAGE" sh -c '
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+dpkg --add-architecture armhf
+printf "%s\n" "Acquire::Check-Valid-Until false;" \
+    >/etc/apt/apt.conf.d/99no-check-valid
+printf "%s\n" \
+    "deb [trusted=yes] http://archive.debian.org/debian buster main" \
+    >/etc/apt/sources.list
+apt-get update >/dev/null
+apt-get install -y --no-install-recommends \
+    binutils-arm-linux-gnueabihf \
+    gcc-arm-linux-gnueabihf \
+    libc6-dev-armhf-cross \
+    qemu-user-static \
+    time >/dev/null
+
+mkdir -p /armhf/packages /output/llvm-wrapper /output/tmp /output/sections
+cd /armhf/packages
+apt-get download libc6:armhf libgcc1:armhf libstdc++6:armhf zlib1g:armhf \
+    >/dev/null
+for package in ./*.deb; do
+    dpkg-deb -x "$package" /armhf
+done
+
+printf "%s\n" "#!/bin/sh" \
+    "exec /usr/bin/qemu-arm-static -L /armhf /aot/llvm/bin/opt \"\$@\"" \
+    >/output/llvm-wrapper/opt
+printf "%s\n" "#!/bin/sh" \
+    "exec /usr/bin/qemu-arm-static -L /armhf /aot/llvm/bin/llc \"\$@\"" \
+    >/output/llvm-wrapper/llc
+chmod +x /output/llvm-wrapper/opt /output/llvm-wrapper/llc
+
+export MONO_PATH=/game/mono/lib/mono/4.5:/game/dlls:/game/gamedata:/aot/lib/mono/4.5
+export MONO_CFG_DIR=/aot/etc
+export LD_LIBRARY_PATH=/aot/lib
+export TMPDIR=/output/tmp
+cd /output
+/usr/bin/time -v -o compile.time.txt \
+    /usr/bin/qemu-arm-static -L /armhf /aot/bin/mono-sgen-profilefix -O=all \
+    --aot="llvm,profile=/aot/profile/pressure-safe.aotprofile,profile-only-strict,stats,print-skipped-methods,mtriple=armv7-linux-gnueabihf,llvm-path=/output/llvm-wrapper/,tool-prefix=arm-linux-gnueabihf-,llvmopts=-O3 -mcpu=cortex-a7,outfile=/output/Stardew Valley.XmlSerializers.dll.so" \
+    "/game/gamedata/Stardew Valley.XmlSerializers.dll" \
+    >compile.log 2>compile.err
+
+grep -q "Compiled: 166/166 (100%), LLVM: 158 (95%)" compile.log
+arm-linux-gnueabihf-readelf -h "Stardew Valley.XmlSerializers.dll.so" \
+    | grep -q "Machine:.*ARM"
+arm-linux-gnueabihf-objcopy \
+    --dump-section .text=/output/sections/text.bin \
+    "Stardew Valley.XmlSerializers.dll.so"
+arm-linux-gnueabihf-objcopy \
+    --dump-section .rodata=/output/sections/rodata.bin \
+    "Stardew Valley.XmlSerializers.dll.so"
+'
+
+text_hash=$(sha256_file "$WORK/sections/text.bin")
+rodata_hash=$(sha256_file "$WORK/sections/rodata.bin")
+if [ "$text_hash" != 77491f6f1ab6c1859b5c47800880a55f34f3890a4da9c71c43435dfede9cfcfd ] || \
+   [ "$rodata_hash" != bfb99a049611924834a18b675df6ebdc6689519586ec4d82c354757e768746d5 ]; then
+    echo "ERROR: generated ARM code does not match the tested v1 build" >&2
+    exit 1
+fi
+
+sidecar_hash=$(sha256_file "$WORK/Stardew Valley.XmlSerializers.dll.so")
+cp "$WORK/Stardew Valley.XmlSerializers.dll.so" "$SIDECAR.tmp"
+mv "$SIDECAR.tmp" "$SIDECAR"
+cat > "$MARKER.tmp" <<EOF
+format=svmm-profile-aot-package-v1
+mode=game-serializer-only
+assembly=gamedata/Stardew Valley.XmlSerializers.dll
+assembly_sha256=1eb7644d1648368684f7d422ad9922106ac1929f9c953c78115b666bf047fea9
+sidecar=gamedata/Stardew Valley.XmlSerializers.dll.so
+sidecar_sha256=$sidecar_hash
+text_sha256=$text_hash
+rodata_sha256=$rodata_hash
+profile_sha256=6ebb3145af2264e1d848110e17b12fe6f745356e97c1ce693c5af518c5837d89
+exclusion_policy_sha256=579f167f1eab51610e44da2ffe40a8da0294a94ba1ce5ce79544f21e5aa06b0c
+toolchain_manifest_sha256=1d595b646fcf92b96819c73ad8b3c90d5624464a14b99d71d7db6e621f0d7253
+profile_only_mode=profile-only-strict
+compiled_methods=166
+llvm_methods=158
+compiler_sha256=a73c86c3d755e6246badf14f656bb465224825e60d5304952b5740d94adcf954
+loaded_llvm_sha256=bc7a047dc56e2182f1fa1eb9987dcad702cdcd545a9a7b894a18f5dba52ece87
+mono_commit=5266e6a8f107d9b91a6073e4fd1ef4eb1ac7ac6d
+llvm_commit=c97510286a58f9aaa116fcfdb8b693d5f61910d2
+evidence_id=v1-user-prepared
+EOF
+mv "$MARKER.tmp" "$MARKER"
+
+echo "ARM serializer ready."
