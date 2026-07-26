@@ -1,0 +1,63 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -779,5 +779,6 @@
+ set(HAVE_ALSA       0)
+ set(HAVE_OSS        0)
++set(HAVE_MIAO       0)
+ set(HAVE_SOLARIS    0)
+ set(HAVE_SNDIO      0)
+ set(HAVE_DSOUND     0)
+@@ -849,6 +850,31 @@
+     message(FATAL_ERROR "Failed to enabled required OSS backend")
+ endif()
+ 
++# Check Miyoo Mini SigmaStar MI_AO backend
++option(ALSOFT_BACKEND_MIAO "Enable Miyoo MI_AO backend" OFF)
++option(ALSOFT_REQUIRE_MIAO "Require Miyoo MI_AO backend" OFF)
++set(MIAO_INCLUDE_DIR "" CACHE PATH "SigmaStar MI_AO include directory")
++set(MIAO_LIBRARY "" CACHE FILEPATH "SigmaStar MI_AO library")
++set(MIAO_SYS_LIBRARY "" CACHE FILEPATH "SigmaStar MI system library")
++set(CAM_OS_WRAPPER_LIBRARY "" CACHE FILEPATH "SigmaStar CamOS userspace wrapper")
++if(ALSOFT_BACKEND_MIAO)
++    if(NOT EXISTS "${MIAO_INCLUDE_DIR}/mi_ao.h" OR
++       NOT EXISTS "${MIAO_LIBRARY}" OR
++       NOT EXISTS "${MIAO_SYS_LIBRARY}" OR
++       NOT EXISTS "${CAM_OS_WRAPPER_LIBRARY}")
++        message(FATAL_ERROR "Miyoo MI_AO headers or library not found")
++    endif()
++    set(HAVE_MIAO 1)
++    set(CPP_DEFS ${CPP_DEFS} HAVE_MIAO)
++    set(BACKENDS "${BACKENDS} Miyoo-MI_AO,")
++    set(ALC_OBJS ${ALC_OBJS} alc/backends/miao.cpp alc/backends/miao.h)
++    set(INC_PATHS ${INC_PATHS} ${MIAO_INCLUDE_DIR})
++    set(EXTRA_LIBS ${MIAO_LIBRARY} ${MIAO_SYS_LIBRARY} ${CAM_OS_WRAPPER_LIBRARY} ${EXTRA_LIBS})
++endif()
++if(ALSOFT_REQUIRE_MIAO AND NOT HAVE_MIAO)
++    message(FATAL_ERROR "Failed to enable required Miyoo MI_AO backend")
++endif()
++
+ # Check Solaris backend
+ option(ALSOFT_REQUIRE_SOLARIS "Require Solaris backend" OFF)
+ find_package(AudioIO)
+--- a/alc/alc.cpp
++++ b/alc/alc.cpp
+@@ -126,6 +126,9 @@
+ #ifdef HAVE_OSS
+ #include "backends/oss.h"
+ #endif
++#ifdef HAVE_MIAO
++#include "backends/miao.h"
++#endif
+ #ifdef HAVE_DSOUND
+ #include "backends/dsound.h"
+ #endif
+@@ -202,6 +205,9 @@
+ #ifdef HAVE_OSS
+     { "oss", OSSBackendFactory::getFactory },
+ #endif
++#ifdef HAVE_MIAO
++    { "miao", MiaoBackendFactory::getFactory },
++#endif
+ #ifdef HAVE_DSOUND
+     { "dsound", DSoundBackendFactory::getFactory },
+ #endif

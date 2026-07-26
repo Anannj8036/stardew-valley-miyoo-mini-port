@@ -1,0 +1,30 @@
+--- a/alc/alc.cpp
++++ b/alc/alc.cpp
+@@ -2486,8 +2486,14 @@
+     StartEventThrd(this);
+ 
+ 
+-    allocVoices(256);
+-    mActiveVoiceCount.store(64, std::memory_order_relaxed);
++    const size_t initialVoiceCount{
++        std::max<size_t>(1, std::min<size_t>(256, mDevice->SourcesMax))};
++    allocVoices(initialVoiceCount);
++    mActiveVoiceCount.store(initialVoiceCount, std::memory_order_relaxed);
++    TRACE("SVMM initial voice pool: active=%zu allocated=%zu source_cap=%u "
++        "voice_size=%zu channel_size=%zu\n", initialVoiceCount,
++        mVoiceClusters.size()*32, mDevice->SourcesMax, sizeof(Voice),
++        sizeof(Voice::ChannelData));
+ }
+ 
+ bool ALCcontext::deinit()
+@@ -4136,7 +4142,9 @@
+             ctx->mCurrentVoiceChange.store(vchg, std::memory_order_release);
+ 
+             ctx->mVoiceClusters.clear();
+-            ctx->allocVoices(std::max<size_t>(256,
++            const size_t initialVoiceCount{
++                std::max<size_t>(1, std::min<size_t>(256, dev->SourcesMax))};
++            ctx->allocVoices(std::max(initialVoiceCount,
+                 ctx->mActiveVoiceCount.load(std::memory_order_relaxed)));
+         }
+ 

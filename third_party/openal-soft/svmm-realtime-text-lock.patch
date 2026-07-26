@@ -1,0 +1,83 @@
+--- a/alc/helpers.cpp
++++ b/alc/helpers.cpp
+@@ -22,6 +22,7 @@
+ 
+ #include <algorithm>
+ #include <cerrno>
++#include <cstdint>
+ #include <cstdarg>
+ #include <cstdlib>
+ #include <cstdio>
+@@ -188,6 +189,9 @@
+ 
+ #include <sys/types.h>
+ #include <unistd.h>
++#ifdef __linux__
++#include <sys/mman.h>
++#endif
+ #include <dirent.h>
+ #ifdef __FreeBSD__
+ #include <sys/sysctl.h>
+@@ -406,8 +410,62 @@
+     return results;
+ }
+ 
++#ifdef __linux__
++namespace {
++
++std::once_flag SvmmRealtimeTextLockOnce;
++
++void svmm_lock_realtime_text() noexcept
++{
++    std::FILE *maps{std::fopen("/proc/self/maps", "r")};
++    if(!maps)
++    {
++        WARN("SVMM could not inspect OpenAL text residency: %s\n", std::strerror(errno));
++        return;
++    }
++
++    const std::uintptr_t marker{
++        reinterpret_cast<std::uintptr_t>(&svmm_lock_realtime_text)};
++    char line[512];
++    while(std::fgets(line, sizeof(line), maps))
++    {
++        unsigned long start{};
++        unsigned long end{};
++        char permissions[5]{};
++        if(std::sscanf(line, "%lx-%lx %4s", &start, &end, permissions) != 3 ||
++           permissions[0] != 'r' || permissions[2] != 'x' ||
++           marker < static_cast<std::uintptr_t>(start) ||
++           marker >= static_cast<std::uintptr_t>(end))
++            continue;
++
++        const size_t bytes{static_cast<size_t>(end - start)};
++        void *const address{reinterpret_cast<void*>(start)};
++        if(::mlock(address, bytes) == 0)
++            TRACE("SVMM locked OpenAL real-time text: %zu bytes\n", bytes);
++        else
++        {
++            const int lock_error{errno};
++            const int prefetch_result{::madvise(address, bytes, MADV_WILLNEED)};
++            WARN("SVMM could not lock OpenAL real-time text (%zu bytes): %s; "
++                "prefetch=%s\n", bytes, std::strerror(lock_error),
++                prefetch_result == 0 ? "ok" : std::strerror(errno));
++        }
++        std::fclose(maps);
++        return;
++    }
++
++    std::fclose(maps);
++    WARN("SVMM could not locate the OpenAL executable mapping\n");
++}
++
++} // namespace
++#endif
++
+ void SetRTPriority()
+ {
++#ifdef __linux__
++    std::call_once(SvmmRealtimeTextLockOnce, svmm_lock_realtime_text);
++#endif
+ #if defined(HAVE_PTHREAD_SETSCHEDPARAM) && !defined(__OpenBSD__)
+     if(RTPrioLevel > 0)
+     {
