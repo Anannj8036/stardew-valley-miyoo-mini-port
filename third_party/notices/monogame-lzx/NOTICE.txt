@@ -1,0 +1,12 @@
+MonoGame LZX decoder notice
+
+The LZX decoder in MonoGame.Framework.dll is derived from libmspack.
+
+Copyright (c) 2003-2004 Stuart Caie
+Copyright (c) 2011 Ali Scissons
+Copyright (c) The MonoGame Team
+
+The LZX method was created by Jonathan Forbes and Tomi Poutanen and adapted by
+Microsoft Corporation. The decoder source is dual-licensed under LGPL-2.1 or
+MS-PL. This distribution uses the MS-PL option. The complete license is in
+MS-PL.txt.
