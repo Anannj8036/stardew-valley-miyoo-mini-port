@@ -4,33 +4,29 @@
 
 An OnionOS port of Stardew Valley for the Miyoo Mini and Miyoo Mini Plus.
 
-This repository contains release information, the preparation scripts included
-with the download, and source and notices for third-party components. The port
-itself is not open source yet. Stardew Valley and its assets are not included.
+Stardew Valley and its assets are not included. You need the `1.6.14.24317`
+compatibility version of the game.
 
 ## Install
 
-1. Download `stardew-valley-miyoo-mini-v1.0.0.tar.gz` from GitHub Releases.
-2. Extract it and put the Stardew Valley `1.6.14.24317` compatibility files in
-   the `gamefiles` folder.
-3. On your computer, install [Mono 6.12](https://www.mono-project.com/download/stable/),
-   then run `prepare.sh` from the extracted release folder.
+1. Download the release archive and extract it.
+2. Put the game files in its `gamefiles` folder.
+3. Install [Mono 6.12](https://www.mono-project.com/download/stable/) on your
+   computer and run `prepare.sh` from the extracted folder.
 4. Copy `OnionOS-package/Roms` to the root of the Miyoo SD card.
 
-`prepare.sh` is in the root of the downloaded release. The exact script and its
-supporting shell scripts are also mirrored in [release-tools](release-tools) if
-you would like to review them. Run the copy in the release archive because it
-needs the compiled preparation tools and runtime template shipped beside it.
+The copy of `prepare.sh` under [release-tools](release-tools) is here for review.
+Use the one in the release archive; it needs files that are only shipped with
+the release.
 
-The port is installed as **Stardew Valley for Miyoo Mini**.
-Game files and saves are not included in the download.
+The port appears in OnionOS as **Stardew Valley for Miyoo Mini**.
 
-## Third-party Source
+## Source and licenses
 
-The modified OpenAL Soft source and the exact build scripts used for the bundled
-audio library are under [third_party/openal-soft](third_party/openal-soft) and
-[scripts](scripts). A matching OpenAL source archive is also attached to every
-GitHub release.
+The files written for this project are released under the [MIT License](LICENSE).
+The rest of the port is not public yet.
 
-Other bundled components keep their own licenses. Their notices and source
-references are under [third_party/notices](third_party/notices).
+Modified OpenAL Soft source and its build script are included under
+[third_party/openal-soft](third_party/openal-soft). OpenAL Soft, Mono, Mono.Cecil,
+MonoGame LZX, and zlib keep their own licenses; those notices are under
+[third_party/notices](third_party/notices).
