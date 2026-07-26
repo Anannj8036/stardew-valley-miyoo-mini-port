@@ -1,0 +1,6 @@
+/artifacts/
+/releases/*
+!/releases/.gitkeep
+
+.DS_Store
+._*
